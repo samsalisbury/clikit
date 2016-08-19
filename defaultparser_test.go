@@ -3,43 +3,41 @@ package clikit
 import (
 	"context"
 	"reflect"
-	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/pkg/errors"
 )
 
-var defaultParserTests = []struct {
-	Command          []string
+var defaultParserTests = map[string]struct {
 	ExpectedExecuter Executer
 	ExpectedArgs     []string
 	ExpectedErr      string
 }{
-	{
-		Command:     []string{"blah"},
+	"blah": {
 		ExpectedErr: "usage: blah <command>",
 	},
-	{
-		Command:          []string{"blah", "list"},
+	"blah list": {
 		ExpectedExecuter: &List{},
 		ExpectedArgs:     []string{},
 	},
 }
 
 func TestDefaultParser(t *testing.T) {
-	for i, test := range defaultParserTests {
+	for cmd, test := range defaultParserTests {
 		test := test
-		t.Run(strconv.Itoa(i), func(t *testing.T) {
+		command := strings.Fields(cmd)
+		t.Run(cmd, func(t *testing.T) {
 			dp := DefaultParser{}
 			ctx := context.Background()
-			executer, args, err := dp.Parse(ctx, Root{}, test.Command)
+			invocation, err := dp.Parse(ctx, Root{}, command)
 			if err := compareErrors(err, test.ExpectedErr); err != nil {
 				t.Error(err)
 			}
-			if err := compareExecutors(executer, test.ExpectedExecuter); err != nil {
+			if err := compareExecutors(invocation.Executer, test.ExpectedExecuter); err != nil {
 				t.Error(err)
 			}
-			if err := compareArgs(args, test.ExpectedArgs); err != nil {
+			if err := compareArgs(invocation.Args, test.ExpectedArgs); err != nil {
 				t.Error(err)
 			}
 		})

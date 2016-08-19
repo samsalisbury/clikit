@@ -139,16 +139,13 @@ func TestCLI(t *testing.T) {
 			cli := CLI{
 				Root: &Root{},
 				Hooks: Hooks{
-					PreParse: func(ctx context.Context, cmdLine *[]string) error {
+					PreParse: func(cmdLine *[]string) error {
 						return nil
 					},
-					PostParse: func(ctx context.Context, cmd Executer, args []string) error {
+					PreExecute: func(Invocation) error {
 						return nil
 					},
-					PreExecute: func(ctx context.Context, cmd Executer, args []string) error {
-						return nil
-					},
-					PostExecute: func(ctx context.Context, cmd Executer, args []string, err error) error {
+					PostExecute: func(Invocation, *error) error {
 						return nil
 					},
 				},

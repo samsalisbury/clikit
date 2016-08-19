@@ -15,7 +15,7 @@ type Helper interface {
 
 // Subcmdr is a command with subcommands.
 type Subcmdr interface {
-	Subcmds() []Helper
+	Subcmds() map[string]Helper
 }
 
 // Executer is a command that can be directly executed. This means it can be the
@@ -40,7 +40,21 @@ type OptionSet interface {
 // Parser is something which can parse a command line to create an execution
 // plan.
 type Parser interface {
-	// Parse parses a command line to return a target executer and args to be
-	// passed to it.
-	Parse(ctx context.Context, root Cmd, cmdLine []string) (Executer, []string, error)
+	// Parse parses a command line to return a target executer, args, and a
+	// slice of values. The slice of values can, for example, be used to
+	// represent the results of flag parsing.
+	Parse(ctx context.Context, root Cmd, cmdLine []string) (Invocation, error)
+}
+
+// Invocation is a ready-to-execute invocation of a command.
+type Invocation struct {
+	Executer
+	// Args are the non-flag args.
+	Args []string
+	// Options is a set of things collected by the command parser.
+	Options []interface{}
+}
+
+func (i Invocation) Execute(ctx context.Context) error {
+	return i.Executer.Execute(ctx, i.Args)
 }
