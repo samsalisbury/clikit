@@ -13,7 +13,7 @@ import (
 
 // Root is the test root command.
 type Root struct {
-	Options RootOptions
+	Opts RootOptions
 }
 
 func (Root) Help() string {
@@ -40,6 +40,10 @@ func (Root) Subcmds() map[string]Cmd {
 		"list": &List{},
 		"run":  &Run{},
 	}
+}
+
+func (r Root) Options() interface{} {
+	return &r.Opts
 }
 
 type List struct {

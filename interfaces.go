@@ -27,7 +27,7 @@ type Executer interface {
 
 // Optioner is a command, or a command dependency that accepts options.
 type Optioner interface {
-	Options() OptionSet
+	Options() interface{}
 }
 
 // OptionSet is a set of options.

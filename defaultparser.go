@@ -5,6 +5,7 @@ import (
 	"flag"
 	"log"
 	"reflect"
+	"strings"
 	"time"
 
 	"github.com/pkg/errors"
@@ -23,7 +24,9 @@ func (p *DefaultParser) Parse(ctx context.Context, root Cmd, cmdLine []string) (
 	go func() {
 		name := cmdLine[0]
 		cmdLine = cmdLine[1:]
-		invocation, err = p.parse(root, name, cmdLine)
+		fs := flag.NewFlagSet(name, flag.ContinueOnError)
+		opts := &OptionsSet{}
+		invocation, err = p.parse(fs, opts, root, name, cmdLine)
 		done <- err
 	}()
 
@@ -36,7 +39,7 @@ func (p *DefaultParser) Parse(ctx context.Context, root Cmd, cmdLine []string) (
 	return invocation, err
 }
 
-func (p *DefaultParser) parse(root Cmd, name string, cmdLine []string) (Invocation, error) {
+func (p *DefaultParser) parse(fs *flag.FlagSet, opts *OptionsSet, root Cmd, name string, cmdLine []string) (Invocation, error) {
 	log.Printf("PARSING %T", root)
 	if name[0] == byte('-') {
 		panic("OMG")
@@ -44,19 +47,32 @@ func (p *DefaultParser) parse(root Cmd, name string, cmdLine []string) (Invocati
 	}
 	if executer, ok := root.(Executer); ok {
 		log.Printf("EXECUTOR %T", root)
-		flagSet, flagValues := constructFlagSet(name, executer)
-		err := flagSet.Parse(cmdLine)
+		if err := constructFlagSet(fs, opts, name, executer); err != nil {
+			return Invocation{}, errors.Wrapf(err, "constructing flag set")
+		}
+		err := fs.Parse(cmdLine)
 		return Invocation{
 			Executer: executer,
-			Args:     flagSet.Args(),
-			Options:  flagValues,
+			Args:     fs.Args(),
+			Options:  *opts,
 		}, err
 	}
 	var i Invocation
+	if optioner, ok := root.(Optioner); ok {
+		intermediateFS := flag.NewFlagSet(name, flag.ContinueOnError)
+		intermediateOpts := optioner.Options()
+		addFlags(intermediateFS, reflect.ValueOf(intermediateOpts))
+		addFlags(fs, reflect.ValueOf(intermediateOpts))
+		if err := intermediateFS.Parse(cmdLine); err != nil {
+			return i, errors.Wrapf(err, "parsing intermediate options of %s", name)
+		}
+		opts.Add(intermediateOpts)
+		cmdLine = intermediateFS.Args()
+	}
+	subcmdr, ok := root.(Subcmdr)
 	if len(cmdLine) == 0 {
 		return i, errors.Errorf("usage: %s %s", name, root.Help())
 	}
-	subcmdr, ok := root.(Subcmdr)
 	if !ok {
 		return i, errors.Errorf("command %T has no subcommands", root)
 	}
@@ -68,27 +84,26 @@ func (p *DefaultParser) parse(root Cmd, name string, cmdLine []string) (Invocati
 		return i, errors.Errorf("command %q not recognised", name)
 	}
 	log.Println("DESCENDING")
-	return p.parse(sub, subName, subCmdLine)
+	return p.parse(fs, opts, sub, subName, subCmdLine)
 }
 
 var optionSetType = reflect.TypeOf((*OptionSet)(nil)).Elem()
 
-func constructFlagSet(name string, cmd Executer) (*flag.FlagSet, []interface{}) {
+func constructFlagSet(fs1 *flag.FlagSet, opts *OptionsSet, name string, cmd Executer) error {
 	fs := flag.NewFlagSet(name, flag.ContinueOnError)
 	t := reflect.TypeOf(cmd)
 	if t.Kind() == reflect.Ptr {
 		t = t.Elem()
 	}
 	if t.Kind() != reflect.Struct {
-		return fs, nil
+		return nil
 	}
-	flagGroups := addFlagGroupsFromType(fs, t)
-	return fs, flagGroups
+	addFlagGroupsFromType(fs, opts, t)
+	return nil
 }
 
 // addFlagGroupsFromType adds fields of this type as flag groups.
-func addFlagGroupsFromType(fs *flag.FlagSet, t reflect.Type) []interface{} {
-	groups := []interface{}{}
+func addFlagGroupsFromType(fs *flag.FlagSet, opts *OptionsSet, t reflect.Type) {
 	n := t.NumField()
 	for i := 0; i < n; i++ {
 		ft := t.Field(i).Type
@@ -102,38 +117,46 @@ func addFlagGroupsFromType(fs *flag.FlagSet, t reflect.Type) []interface{} {
 		}
 		ftp := reflect.PtrTo(ft)
 		fv := reflect.New(ft).Elem()
-		var ost OptionSet
-		if ft.Implements(optionSetType) {
-			ost = reflect.New(ft).Elem().Interface().(OptionSet)
-		} else if ftp.Implements(optionSetType) {
-			ost = reflect.New(ft).Interface().(OptionSet)
-		}
-
 		if ft.Implements(optionSetType) || ftp.Implements(optionSetType) {
-			addFlags(fs, ft, fv, ost.DefaultShortLong)
-			var flagVal interface{}
+			addFlags(fs, fv)
+			var optGroup interface{}
 			if isPtr {
-				flagVal = fv.Addr().Interface()
+				optGroup = fv.Addr().Interface()
 			} else {
-				flagVal = fv.Interface()
+				optGroup = fv.Interface()
 			}
-			groups = append(groups, flagVal)
+			opts.Add(optGroup)
 			continue
 		}
-		groups = append(groups, addFlagGroupsFromType(fs, ft)...)
+		addFlagGroupsFromType(fs, opts, ft)
 	}
-	return groups
 }
 
 // addFlags adds the fields of this val as flags.
-func addFlags(fs *flag.FlagSet, typ reflect.Type, val reflect.Value,
-	infoFunc func(string) (interface{}, string, string)) {
+func addFlags(fs *flag.FlagSet, val reflect.Value) {
+	typ := val.Type()
+	if typ.Kind() == reflect.Ptr {
+		val = val.Elem()
+		typ = val.Type()
+	}
 	if typ.Kind() != reflect.Struct {
 		panic("WANT STRUCT")
 	}
+	var infoFunc func(string) (interface{}, string, string)
+	var ost OptionSet
+	ptr := reflect.PtrTo(typ)
+	if typ.Implements(optionSetType) {
+		ost = reflect.New(typ).Elem().Interface().(OptionSet)
+		infoFunc = ost.DefaultShortLong
+	} else if ptr.Implements(optionSetType) {
+		ost = reflect.New(typ).Interface().(OptionSet)
+		infoFunc = ost.DefaultShortLong
+	}
+
 	n := typ.NumField()
 	for i := 0; i < n; i++ {
 		name := typ.Field(i).Name
+		name = strings.ToLower(name)
 		def, short, _ := infoFunc(name)
 		switch v := val.Field(i).Interface().(type) {
 		case bool:

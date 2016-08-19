@@ -13,13 +13,68 @@ var defaultParserTests = map[string]struct {
 	ExpectedExecuter Executer
 	ExpectedArgs     []string
 	ExpectedErr      string
+	ExpectedOpts     []interface{}
 }{
 	"cmd": {
 		ExpectedErr: "usage: cmd <command>",
 	},
+	"cmd -debug": {
+		ExpectedErr: "usage: cmd <command>",
+		ExpectedOpts: []interface{}{
+			RootOptions{Debug: true},
+		},
+	},
+	"cmd -configfile somefile": {
+		ExpectedErr: "usage: cmd <command>",
+		ExpectedOpts: []interface{}{
+			RootOptions{ConfigFile: "somefile"},
+		},
+	},
 	"cmd list": {
 		ExpectedExecuter: &List{},
 		ExpectedArgs:     []string{},
+	},
+	"cmd -debug list": {
+		ExpectedExecuter: &List{},
+		ExpectedArgs:     []string{},
+		ExpectedOpts: []interface{}{
+			RootOptions{Debug: true},
+		},
+	},
+	"cmd -configfile somefile list": {
+		ExpectedExecuter: &List{},
+		ExpectedArgs:     []string{},
+		ExpectedOpts: []interface{}{
+			RootOptions{ConfigFile: "somefile"},
+		},
+	},
+	"cmd -configfile somefile -debug list": {
+		ExpectedExecuter: &List{},
+		ExpectedArgs:     []string{},
+		ExpectedOpts: []interface{}{
+			RootOptions{ConfigFile: "somefile", Debug: true},
+		},
+	},
+	"cmd list -debug": {
+		ExpectedExecuter: &List{},
+		ExpectedArgs:     []string{},
+		ExpectedOpts: []interface{}{
+			RootOptions{Debug: true},
+		},
+	},
+	"cmd list -configfile somefile": {
+		ExpectedExecuter: &List{},
+		ExpectedArgs:     []string{},
+		ExpectedOpts: []interface{}{
+			RootOptions{ConfigFile: "somefile"},
+		},
+	},
+	"cmd list -configfile somefile -debug": {
+		ExpectedExecuter: &List{},
+		ExpectedArgs:     []string{},
+		ExpectedOpts: []interface{}{
+			RootOptions{ConfigFile: "somefile", Debug: true},
+		},
 	},
 	"cmd list blah blah blah": {
 		ExpectedExecuter: &List{},
@@ -29,6 +84,7 @@ var defaultParserTests = map[string]struct {
 
 func TestDefaultParser(t *testing.T) {
 	for cmd, test := range defaultParserTests {
+		t.Log(cmd)
 		test := test
 		command := strings.Fields(cmd)
 		//t.Run(cmd, func(t *testing.T) {
@@ -36,7 +92,7 @@ func TestDefaultParser(t *testing.T) {
 		ctx := context.Background()
 		invocation, err := dp.Parse(ctx, &Root{}, command)
 		if err := compareErrors(err, test.ExpectedErr); err != nil {
-			t.Errorf("%+v", errors.Wrap(err, cmd))
+			t.Errorf("%v", errors.Wrap(err, cmd))
 		}
 		if err := compareExecutors(invocation.Executer, test.ExpectedExecuter); err != nil {
 			t.Error(errors.Wrap(err, cmd))
