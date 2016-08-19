@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"runtime"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -18,7 +17,7 @@ type Root struct {
 }
 
 func (Root) Help() string {
-	return "root help"
+	return "<command>"
 }
 
 type RootOptions struct {
@@ -36,9 +35,10 @@ func (RootOptions) DefaultShortLong(fieldName string) (def interface{}, short, l
 	return nil, "", ""
 }
 
-func (Root) Subcmds() []Cmd {
-	return []Cmd{
-		&List{}, &Run{},
+func (Root) Subcmds() map[string]Cmd {
+	return map[string]Cmd{
+		"list": &List{},
+		"run":  &Run{},
 	}
 }
 
@@ -132,46 +132,46 @@ var cliTests = []struct {
 
 func TestCLI(t *testing.T) {
 	t.Skip()
-	for i, test := range cliTests {
+	for _, test := range cliTests {
 		test := test
-		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			t.Parallel()
-			cli := CLI{
-				Root: &Root{},
-				Hooks: Hooks{
-					PreParse: func(cmdLine *[]string) error {
-						return nil
-					},
-					PreExecute: func(Invocation) error {
-						return nil
-					},
-					PostExecute: func(Invocation, *error) error {
-						return nil
-					},
+		//t.Run(strconv.Itoa(i), func(t *testing.T) {
+		t.Parallel()
+		cli := CLI{
+			Root: &Root{},
+			Hooks: Hooks{
+				PreParse: func(cmdLine *[]string) error {
+					return nil
 				},
-				Parser: &DefaultParser{},
-			}
-			ctx := context.Background()
-			err := cli.Invoke(ctx, test.CommandLine)
+				PreExecute: func(Invocation) error {
+					return nil
+				},
+				PostExecute: func(Invocation, *error) error {
+					return nil
+				},
+			},
+			Parser: &DefaultParser{},
+		}
+		ctx := context.Background()
+		err := cli.Invoke(ctx, test.CommandLine)
 
-			e := func(format string, a ...interface{}) error {
-				err := errors.Errorf(format, a...)
-				return errors.Wrapf(err, "executing %# q", strings.Join(test.CommandLine, " "))
-			}
+		e := func(format string, a ...interface{}) error {
+			err := errors.Errorf(format, a...)
+			return errors.Wrapf(err, "executing %# q", strings.Join(test.CommandLine, " "))
+		}
 
-			if err != nil && test.Err == "" {
-				t.Error(e("unexpected error %q", err))
+		if err != nil && test.Err == "" {
+			t.Error(e("unexpected error %q", err))
+		}
+		if test.Err != "" {
+			if err == nil {
+				t.Error(e("got nil; want error %q", test.Err))
+			} else if err.Error() != test.Err {
+				t.Error(e("got error %q; want %q", err.Error(), test.Err))
 			}
-			if test.Err != "" {
-				if err == nil {
-					t.Error(e("got nil; want error %q", test.Err))
-				} else if err.Error() != test.Err {
-					t.Error(e("got error %q; want %q", err.Error(), test.Err))
-				}
-			}
-			for range test.OutLines {
-				// todo: check output
-			}
-		})
+		}
+		for range test.OutLines {
+			// todo: check output
+		}
+		//})
 	}
 }

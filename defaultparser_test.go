@@ -14,12 +14,16 @@ var defaultParserTests = map[string]struct {
 	ExpectedArgs     []string
 	ExpectedErr      string
 }{
-	"blah": {
-		ExpectedErr: "usage: blah <command>",
+	"cmd": {
+		ExpectedErr: "usage: cmd <command>",
 	},
-	"blah list": {
+	"cmd list": {
 		ExpectedExecuter: &List{},
 		ExpectedArgs:     []string{},
+	},
+	"cmd list blah blah blah": {
+		ExpectedExecuter: &List{},
+		ExpectedArgs:     []string{"blah", "blah", "blah"},
 	},
 }
 
@@ -27,20 +31,20 @@ func TestDefaultParser(t *testing.T) {
 	for cmd, test := range defaultParserTests {
 		test := test
 		command := strings.Fields(cmd)
-		t.Run(cmd, func(t *testing.T) {
-			dp := DefaultParser{}
-			ctx := context.Background()
-			invocation, err := dp.Parse(ctx, Root{}, command)
-			if err := compareErrors(err, test.ExpectedErr); err != nil {
-				t.Error(err)
-			}
-			if err := compareExecutors(invocation.Executer, test.ExpectedExecuter); err != nil {
-				t.Error(err)
-			}
-			if err := compareArgs(invocation.Args, test.ExpectedArgs); err != nil {
-				t.Error(err)
-			}
-		})
+		//t.Run(cmd, func(t *testing.T) {
+		dp := DefaultParser{}
+		ctx := context.Background()
+		invocation, err := dp.Parse(ctx, &Root{}, command)
+		if err := compareErrors(err, test.ExpectedErr); err != nil {
+			t.Errorf("%+v", errors.Wrap(err, cmd))
+		}
+		if err := compareExecutors(invocation.Executer, test.ExpectedExecuter); err != nil {
+			t.Error(errors.Wrap(err, cmd))
+		}
+		if err := compareArgs(invocation.Args, test.ExpectedArgs); err != nil {
+			t.Error(errors.Wrap(err, cmd))
+		}
+		//})
 	}
 }
 
@@ -77,7 +81,7 @@ func compareErrors(actualErr error, expected string) error {
 	}
 	actual := actualErr.Error()
 	if actual != expected {
-		return errors.Errorf("got error %q; want %q", actual, expected)
+		return errors.Errorf("got error %#q; want %#q", actual, expected)
 	}
 	return nil
 

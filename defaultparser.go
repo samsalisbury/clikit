@@ -3,6 +3,7 @@ package clikit
 import (
 	"context"
 	"flag"
+	"log"
 	"reflect"
 	"time"
 
@@ -36,10 +37,13 @@ func (p *DefaultParser) Parse(ctx context.Context, root Cmd, cmdLine []string) (
 }
 
 func (p *DefaultParser) parse(root Cmd, name string, cmdLine []string) (Invocation, error) {
+	log.Printf("PARSING %T", root)
 	if name[0] == byte('-') {
-		return Invocation{}, errors.Errorf("command %q not recognised", name)
+		panic("OMG")
+		//return Invocation{}, errors.Errorf("command %q not recognised", name)
 	}
 	if executer, ok := root.(Executer); ok {
+		log.Printf("EXECUTOR %T", root)
 		flagSet, flagValues := constructFlagSet(name, executer)
 		err := flagSet.Parse(cmdLine)
 		return Invocation{
@@ -50,11 +54,11 @@ func (p *DefaultParser) parse(root Cmd, name string, cmdLine []string) (Invocati
 	}
 	var i Invocation
 	if len(cmdLine) == 0 {
-		return i, errors.Errorf("command %q not recognised", name)
+		return i, errors.Errorf("usage: %s %s", name, root.Help())
 	}
 	subcmdr, ok := root.(Subcmdr)
 	if !ok {
-		return i, errors.Errorf("command %q has no subcommands", name)
+		return i, errors.Errorf("command %T has no subcommands", root)
 	}
 	subs := subcmdr.Subcmds()
 	subName := cmdLine[0]
@@ -63,6 +67,7 @@ func (p *DefaultParser) parse(root Cmd, name string, cmdLine []string) (Invocati
 	if !ok {
 		return i, errors.Errorf("command %q not recognised", name)
 	}
+	log.Println("DESCENDING")
 	return p.parse(sub, subName, subCmdLine)
 }
 
@@ -71,6 +76,12 @@ var optionSetType = reflect.TypeOf((*OptionSet)(nil)).Elem()
 func constructFlagSet(name string, cmd Executer) (*flag.FlagSet, []interface{}) {
 	fs := flag.NewFlagSet(name, flag.ContinueOnError)
 	t := reflect.TypeOf(cmd)
+	if t.Kind() == reflect.Ptr {
+		t = t.Elem()
+	}
+	if t.Kind() != reflect.Struct {
+		return fs, nil
+	}
 	flagGroups := addFlagGroupsFromType(fs, t)
 	return fs, flagGroups
 }
@@ -99,7 +110,7 @@ func addFlagGroupsFromType(fs *flag.FlagSet, t reflect.Type) []interface{} {
 		}
 
 		if ft.Implements(optionSetType) || ftp.Implements(optionSetType) {
-			addFlags(fs, ft, fv.Elem(), ost.DefaultShortLong)
+			addFlags(fs, ft, fv, ost.DefaultShortLong)
 			var flagVal interface{}
 			if isPtr {
 				flagVal = fv.Addr().Interface()
@@ -117,20 +128,34 @@ func addFlagGroupsFromType(fs *flag.FlagSet, t reflect.Type) []interface{} {
 // addFlags adds the fields of this val as flags.
 func addFlags(fs *flag.FlagSet, typ reflect.Type, val reflect.Value,
 	infoFunc func(string) (interface{}, string, string)) {
+	if typ.Kind() != reflect.Struct {
+		panic("WANT STRUCT")
+	}
 	n := typ.NumField()
 	for i := 0; i < n; i++ {
-		name := typ.Field(n).Name
+		name := typ.Field(i).Name
 		def, short, _ := infoFunc(name)
-		vdef := reflect.ValueOf(def)
-		switch v := val.Field(n).Interface().(type) {
+		switch v := val.Field(i).Interface().(type) {
 		case bool:
-			fs.BoolVar(&v, name, vdef.Bool(), short)
+			if def == nil {
+				def = false
+			}
+			fs.BoolVar(&v, name, def.(bool), short)
 		case string:
-			fs.StringVar(&v, name, vdef.String(), short)
+			if def == nil {
+				def = ""
+			}
+			fs.StringVar(&v, name, def.(string), short)
 		case int:
-			fs.IntVar(&v, name, int(vdef.Int()), short)
+			if def == nil {
+				def = 0
+			}
+			fs.IntVar(&v, name, def.(int), short)
 		case time.Duration:
-			fs.DurationVar(&v, name, time.Duration(vdef.Int()), short)
+			if def == nil {
+				def = 1 * time.Second
+			}
+			fs.DurationVar(&v, name, def.(time.Duration), short)
 		}
 	}
 }
